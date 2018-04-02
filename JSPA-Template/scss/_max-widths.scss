@@ -1,0 +1,22 @@
+﻿/*  from thew bootstrap break points 
+    $container-max-widths: ( sm: 540px, md: 720px, lg: 960px, xl: 1140px ) !default;
+*/
+.max-width-sm {
+    max-width: map-get($container-max-widths, "sm");
+    margin: auto;
+}
+.max-width-md {
+    max-width: map-get($container-max-widths, "md");
+    margin: auto;
+}
+.max-width-lg {
+    max-width: map-get($container-max-widths, "lg");
+    margin: auto;
+}
+.max-width-xl {
+    max-width: map-get($container-max-widths, "xl");
+    margin: auto;
+}
+
+
+

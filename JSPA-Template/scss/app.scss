@@ -1,0 +1,55 @@
+﻿
+/*
+    Root file, app.scss is the one that gets built
+    @import "" everything else into here
+*/
+
+@import "bootstrap/bootstrap.scss";
+@import "fontawesome/fontawesome.scss";
+@import "fontawesome/fa-solid.scss";
+
+/* and the app ones */
+$app-highlight: #00a6b8;
+$app-standout: #fff;
+$app-footer-height: 80px;
+
+
+@import "_max-widths.scss";
+@import "_toastr.scss";
+
+html {
+    position: relative;
+    min-height: 100%;
+}
+
+body {
+    margin-bottom: $app-footer-height + 10px; /* Margin bottom by footer height */
+}
+
+a[disabled], a[disabled]:hover {
+    pointer-events: none;
+}
+
+.footer {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: $app-footer-height; /* Set the fixed height of the footer here */
+    line-height: $app-footer-height; /* Vertically center the text there */
+    background-color: #f5f5f5;
+}
+
+/*  and custom classes - last so we can use the variables from bootstrap etc */
+.float-front {
+    position: absolute;
+    z-index: $zindex-popover; /* this is from bootstrap _variables.scss*/
+}
+
+.flex-grow {
+    flex: 1 0 auto;
+}
+
+.inline-heading {
+    display: inline-block;
+    vertical-align: baseline;
+}

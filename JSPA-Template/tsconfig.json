@@ -1,0 +1,18 @@
+﻿{
+  "compileOnSave": true,
+  "compilerOptions": {
+    "removeComments": true,
+    "types": [],
+    "sourceMap": true,
+    "target": "es5",
+    "noEmitOnError": true,
+    "outFile": "dist\\js\\application.js",
+    "module": "none",
+    "lib": [
+      "es5",
+      "es2015",
+      "dom",
+      "scripthost"
+    ]
+  }
+}

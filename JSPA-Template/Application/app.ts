@@ -10,6 +10,9 @@ class App {
     public online: boolean = false;
     public routing: Routing = null;
     public utils: Utils = new Utils();
+    public hasLoaded = false;
+    public navigateOnHashChange: boolean = true; // public so the routing can read it..
+
     private loading: number = null;
     private loaded() {
         // check the components
@@ -30,13 +33,16 @@ class App {
         
         // trigger the URL
         $(window).trigger("hashchange"); 
+
+        // record that we have loaded so other stuff (QUnit) can check
+        this.hasLoaded = true;
     }
 
     public recievers = {};
 
     constructor() {
         let that = this;
-
+        
         // register the serviceWorker
         (function () {
             if (!navigator["serviceWorker"]) {
@@ -56,6 +62,10 @@ class App {
         $(document).ready(function () {
             app = that;
             config = new Config();   
+
+            if (config.verboseMessages)
+                console.warn("JSPA:: Verbose debug messages are enabled - you can disable this in config.ts");
+
             // this will check the version and edit the data stores etc, if need be
             app.verifyDatabase();
 
@@ -75,12 +85,16 @@ class App {
             });
             
             // Bind a callback that executes when document.location.hash changes.
-            $(window).bind("hashchange", function (e) {
-                let state = app.routing.changeState(0);
-
-                app.routing.navigate(state);
+            // unless we are tinkering with it...
+            $(window).bind("hashchange", function (evt) {
+                if (app.navigateOnHashChange) {
+                    let state = app.routing.changeState(0);
+                    app.routing.navigate(state);
+                }
                 return;
             });
+
+
             // wait untill we have loaded
             app.loaded();
         });

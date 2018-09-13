@@ -15,25 +15,17 @@
                         <li class="nav-item">
                             <a class="nav-link" href="#component-1">Component 1</a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="#component-2">Component 2</a>
-                        </li>
                         <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                                Dropdown
-                            </a>
-                            <div class="dropdown-menu" aria-labelledby="navbarDropdown">
-                                <a class="dropdown-item" href="#">Home</a>
-                                <div class="dropdown-divider"></div>
-                                <a class="dropdown-item" href="#component-1">Component 1</a>
-                                <a class="dropdown-item" href="#component-2">Component 2</a>
+                            <div class="nav-link dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                                <i class="fas fa-cogs"></i>
+                            </div>
+                            <div class="dropdown-menu">
+                                <a class="dropdown-item" href="#qunit">Tests</a>
+                                <span class="dropdown-item link" data-bind-click="toggleSubscriptions(pause)">Pause Data Subscriptions</span>
+                                <span class="dropdown-item link" data-bind-click="toggleSubscriptions(resume)">Resume Data Subscriptions</span>
                             </div>
                         </li>
                     </ul>
-                    <form class="form-inline my-2 my-lg-0">
-                        <input class="form-control mr-sm-2" type="search" placeholder="Search" aria-label="Search">
-                        <button class="btn btn-outline-success my-2 my-sm-0" type="submit"><i class="fas fa-search"></i></button>
-                    </form>
                 </div>
             </div>
         </div>

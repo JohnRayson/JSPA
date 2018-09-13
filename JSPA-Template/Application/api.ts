@@ -15,6 +15,7 @@ class Api {
     }
 
     constructor(baseHref?: string) {
+        
         // store the baseHref - if there is one
         if (baseHref)
             this.baseHref = baseHref;
@@ -25,17 +26,23 @@ class Api {
 
     public auth(model: AuthModel): Promise<any> {
         
-        let api = this;
         return new Promise((resolve, reject) => {
             // change this to the endpoint in your API that responds with the token
             resolve(this.post("auth/authenticate", model))
         }).then((reply: any) => {
-            api.token = reply.token;
-            window.sessionStorage.setItem("token", api.token);
-            api.headers["X-Authentication"] = api.token;
+            this.storeSessionData(reply.token);
             return reply.user;
         });
     }
+    public storeSessionData(token: string): boolean {
+        console.log("API.storeSessionData(): ", token);
+        this.token = token;
+        window.sessionStorage.setItem("token", token);
+        this.headers["X-Authentication"] = token;
+
+        return true;
+    }
+
     // test to see if the current user is authenticated
     public isAuthenticated(): boolean {
         if (window.sessionStorage.getItem("token")) {
@@ -94,15 +101,21 @@ class Api {
                     // we are offline - so just let the app handle it.
                     app.online = false;
                 }
-                // unautherized
+                
+                // unautherized == 401
                 if (jqXHR.status == 401) {
                     config.routes[0].component.draw({ code: jqXHR.status, text: textStatus }).then(($content) => {
                         $("#" + config.contentElementId).replaceWith($("<div id= '" + config.contentElementId + "' />").append($content));
                     });
                 }
-                
+
+                // bad request  == 400
+                // forbidden    == 403, “I’m sorry. I know who you are–I believe who you say you are–but you just don’t have permission to access this resource. Maybe if you ask the system administrator nicely, you’ll get permission. But please don’t bother me again until your predicament changes.”
+                if (jqXHR.status == 400 || jqXHR.status == 403) {
+                    console.log("Api.send(): ", jqXHR.status);
+                }
+
                 // if we havn't already returned return a reject()
-                console.log("Error: ", jqXHR);
                 return reject(jqXHR);
             });
         });
@@ -113,15 +126,15 @@ class Api {
 
         request.method = method || "GET";
         request.url = url;
-        request.headers = this.headers;
+        request.headers = $.extend({}, {},this.headers); // clone them so we can change them for a specific request
         request.data = (data != null ? JSON.stringify(data) : null);
-        
+
         return request;
     }
 
-    private subsriptions = []
-    public subscribe(path: string, handler: any, options: ApiRequestOptions): string {
-        let sub = null;
+    private subsriptions: Subscription[] = []
+    public subscribe(path: string, options: ApiRequestOptions, success: any, fail: any): string {
+        let sub: Subscription = null;
         // find it
         for (let i = 0; i < this.subsriptions.length; i++) {
             if (path === this.subsriptions[i].url){
@@ -135,7 +148,7 @@ class Api {
         }
         // add this listener
         let ref = new Utils().createUUID();
-        sub.callbacks.push({ id: ref, func: handler });
+        sub.callbacks.push({ id: ref, func: success });
 
         // first anything from the local store?
         this.localDb.retrieve(options.datastore, function (item) {
@@ -146,19 +159,22 @@ class Api {
             }
             if (matched) {
                 //console.log("API.subscribe() from localDB: ", item.value);
-                handler(item.value);
+                success(item.value);
             }
         });
 
         // then over the wire for an update
         // call get - this gets all the data regardless of changes
-        sub.api.get(sub.url, sub.options).then((reply: any) => {
-            //console.log("API.subscribe() from remote: ", reply);
-            handler(reply);
-        });
+        sub.api.get(sub.url, sub.options)
+            .then((reply: any) => {
+                success(reply);
+            })
+            .catch((rej: any) => {
+                fail(rej);
+            });
 
         // if its not already running - start it
-        if (!sub.started) {
+        if (sub.state() == "stopped") {
             sub.start();
         }
 
@@ -166,7 +182,9 @@ class Api {
     }
     public unsubscribe(id: string): void
     {
-        console.log("API.unsubscribe(): ", { lookingfor: id, in: this.subsriptions });
+        if (config.verboseMessages)
+            console.log("VERBOSE:: API.unsubscribe(): ", { lookingfor: id, in: this.subsriptions });
+
         // for each subscription
         for (let i = 0; i < this.subsriptions.length; i++) {
             // for each callback
@@ -189,6 +207,21 @@ class Api {
             }
         }
     }
+    public pauseSubscriptions(): void {
+        // stops all the setIntervals, and sets the state to "paused"
+        for (let i = 0; i < this.subsriptions.length; i++) {
+            if (this.subsriptions[i].state() == "running")
+                this.subsriptions[i].pause();
+        }
+    }
+    public resumeSubscriptions(): void {
+        // restarts all subscriptions where the state is "paused"
+        for (let i = 0; i < this.subsriptions.length; i++) {
+            if (this.subsriptions[i].state() == "paused")
+                this.subsriptions[i].start();
+        }
+    }
+
 
     public get(path: string, options?: ApiRequestOptions): Promise<any> {
         return new Promise((resolve, reject) => {
@@ -266,6 +299,34 @@ class Api {
                 });
         });
     }
+
+    public form(path: string, $form: JQuery): Promise<any> {
+        // https://abandon.ie/notebook/simple-file-uploads-using-jquery-ajax
+        // https://stackoverflow.com/questions/11442367/how-to-set-boundary-while-using-xmlhttprequest-and-formdata
+        return new Promise((resolve, reject) => { 
+
+            let data = new FormData(<HTMLFormElement>$form[0]);
+            
+            let request = this.createRequest(this.baseHref + path, "POST");
+            request.data = data;
+            request["cache"] = false;
+            request["dataType"] = "json";
+            request["processData"] = false; // Don't process the files
+            request["contentType"] = false; // Set content type to false as jQuery will tell the server its a query string request
+
+            // switch out the headers, the browser auto calculates this and set the form boundary parameter
+            delete request.headers["Content-Type"];
+
+            this.send(request)
+                .then(reply => {
+                    console.log("Api.form(): REPLY: ", reply);
+                    return resolve(reply);
+                })
+                .catch(ex => {
+                    reject(ex);
+                });
+        });
+    }
 }
 // this is the authentication data, make this match what you need to send through to your auth endpoint
 class AuthModel {
@@ -278,26 +339,27 @@ class ApiRequest {
     method: string;
     url: string;
     headers: any;
-    data: string;
+    data: any;
     nonceRetryAttempts: number = 0;
 }
 
 class ApiRequestOptions {
     datastore: string;
-    retrieve: any;
-    onlyChanges?: boolean = false; // true = only return if from localDB, false = all regardless of changes
+    retrieve: any; // key fields
+    onlyChanges?: boolean = false; // true = only return if differnt from localDB, false = all regardless of changes
 }
 
 class Subscription {
-    started: boolean = false;
-    url: string;
-    callbacks: any[] = [];
-    interval: number;
+    private status: string = "stopped";
+    private interval: number;
+    private frequency = 5; // seconds
     // anything other than 200 is bad?
-    statusNot200: boolean = false;
+    private statusNot200: boolean = false;
 
-    private api: Api;
-    private options: ApiRequestOptions;
+    public callbacks: any[] = [];
+    public url: string;
+    public api: Api;
+    public options: ApiRequestOptions;
 
     constructor(path: string, api: Api, options: ApiRequestOptions) {
         this.url = path;
@@ -305,11 +367,21 @@ class Subscription {
         this.options = options;
     }
 
-    start(): void {
-        this.started = true;
+    public state(): string {
+        return this.status;
+    }
+
+    public start(freq?: number): void {
+
+        if (freq)
+            this.frequency = freq;
+
+        this.status = "running";
         
         // ensure that only changes are returned
         let subOptions = $.extend({}, this.options, { onlyChanges: true });
+
+        console.log("Subscription.start()");
 
         // and then every 5 seconds
         this.interval = window.setInterval(() => {
@@ -323,14 +395,20 @@ class Subscription {
             }).catch((ex) => {
                 this.statusNot200 = true;
                 this.stop();
-            });
-        }, 5000);
+                });
+        }, (this.frequency*1000));
         
     }
 
-    stop(): void {
+    public stop(): void {
         console.log("Subscription.stop()");
-        this.started = false;
+        this.status = "stopped";
+        window.clearInterval(this.interval);
+    }
+
+    public pause(): void {
+        console.log("Subscription.pause()");
+        this.status = "paused";
         window.clearInterval(this.interval);
     }
 

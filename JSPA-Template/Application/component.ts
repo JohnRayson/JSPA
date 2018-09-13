@@ -1,4 +1,5 @@
 ﻿/// <reference path="../Services/pipes.ts" />
+/// <reference path="../Services/pipes.ts" />
 
 abstract class Component {
     
@@ -22,19 +23,28 @@ abstract class Component {
             app.recievers[this.parent] = parent;
         }
     }
-
+    
     abstract draw(args?: any)
 
     public blur(route?: Route): void {
-        for (let s = 0; s < this.subscriptions.length; s++)
-            this.unsubscribe(this.subscriptions[s]);
+
+        // do the local stuff first, as below we new -up the component again
+        this.blurOther();
+
+        while (this.subscriptions.length > 0)
+            this.unsubscribe(this.subscriptions[0]);
+
         // unbind all the jquery
         this.$view.empty();
         if (route) {
             // refresh the Componant
             route.component = new route.srcComponent();
         }
+    }
 
+    protected blurOther() {
+        // the extending class can impliment this if it wants to
+        // DONT overwrite blur!!!!!
     }
     
     public postDraw() {
@@ -43,11 +53,9 @@ abstract class Component {
     protected drawn() {
         // the extending class can impliment this if it wants to
     }
-    
-
-    protected subscribe(path: string, handler: any, options: ApiRequestOptions): Promise<string> {
+    protected subscribe(path: string, options: ApiRequestOptions, success: any, fail: any): Promise<string> {
         return new Promise((resolve, reject) => {
-            let ref = config.api.subscribe(path, handler, options);
+            let ref = config.api.subscribe(path, options, success, fail);
             this.subscriptions.push(ref);
             resolve(ref);
         });
@@ -60,22 +68,23 @@ abstract class Component {
             }
         }
     }
-    
-    protected recieve(data: any): void {
+
+    protected recieve(data: JSPAEmit): void {
         console.log("Recieved data, but " + this.constructor.name + " doesn't impliment recieve():", data)
     }
 
-    protected emit(data: any): void {
-        let reply = {
-            src: this.constructor.name,
-            data: data
-        };
-        if (this.parent) {
-            //console.log("Component.emit(): ", { parent: this.parent, recievers: app.recievers, data: reply, obj: this });
-            app.recievers[this.parent].recieve(reply);
-        }
+    protected emit(data: any, $holder?: JQuery): void {
+        let reply = new JSPAEmit(this.constructor.name, data, $holder);
+        this.callParent("recieve",reply);
     }
+    // so we can access any public functions of our parent
+    protected callParent(func: string, args?: any): any {
+        if (this.parent)
+            return app.recievers[this.parent][func](args);
 
+        return null;
+    }
+    
     public $templates: Template[] = [];
 
     public waitingOnAsync(): boolean {
@@ -104,7 +113,16 @@ abstract class Component {
         let waitCount = 0;
         let id = app.utils.createUUID();
         let message = "Waiting on data";
-        this.$view = $("<app-waiting style='padding: 5px;' />").attr("id", id).append($("<h1 />").text(message));
+        this.$view = $("<app-waiting style='padding: 5px; text-align: center;' />").attr("id", id)
+            .append($("<div />").addClass("max-width-md")
+                .append($("<h1 />").text(message))
+                .append($("<div />").addClass("progress")
+                    .append($("<div role='progressbar' aria-valuenow='100' aria-valuemin='0' aria-valuemax='100' />")
+                        .addClass("progress-bar progress-bar-striped progress-bar-animated")
+                        .css({ width: "100%" })
+                    )
+                )
+            );
         
         let updateMsg = function () {
             if (waitCount < 10) {
@@ -113,17 +131,20 @@ abstract class Component {
                     message = message + ".";
                     $("#" + id).find($("h1")).text(message);
                     updateMsg();
-                }, 2000);
+                }, 1000);
             }
             else {
-                $("#" + id)
-                    .append($("<button type='button' class='row btn btn-info' /></button>")
+                $("#" + id).find("div:first")
+                    .append("<br />")
+                    .append($("<button type='button' class='btn btn-info' /></button>")
                         .append("<span>Go Back</span>")
                         .click(function () {
                             window.history.back();
                         })
                     )
-                    .find($("h1")).text("No data recieved")
+                    .find($("h1")).text("No data recieved");
+                // remove the prgress-bar
+                $("#" + id).find(".progress").toggleClass("progress collapse");
             }
         }
         updateMsg();
@@ -132,35 +153,43 @@ abstract class Component {
     }
 
     protected getTemplate(search: string, data?: any): JQuery {
-        // if we are waiting, then clear it.
+        //// if we are showing the waitOnData template, then clear the timer
         if (this.waitTimeout != null) {
             window.clearTimeout(this.waitTimeout);
             this.waitTimeout = null;
         }
 
         let component = this;
-        for (let t = 0; t < this.$templates.length; t++) {
-            if (this.$templates[t].name == search) {
-                this.$view = this.$templates[t].content.clone();
-                this.bind(this.$view, $.extend({}, component, data || {}));
-
-                return this.$view;
-            }
+        this.$view = this.getTemplateJQuery(search);
+        if (this.$view) {
+            this.bind(this.$view, $.extend({}, component, data || {}));
+            return this.$view
         }
+
         return $("<app-notfound />");
     }
+    
     // just don't bind the view
     protected getSubTemplate(search: string, data?: any): JQuery {
         let component = this;
+
+        let $view = this.getTemplateJQuery(search);
+        if ($view) {
+            this.bind($view, $.extend({}, component, data || {}));
+            return $view
+        }
+
+        return $("<app-notfound />");
+
+    }
+    // gets a clone of the template JQuery, nothing else, not binding, nadda
+    protected getTemplateJQuery(search: string): JQuery {
         for (let t = 0; t < this.$templates.length; t++) {
             if (this.$templates[t].name == search) {
-                let $view = this.$templates[t].content.clone();
-                this.bind($view, $.extend({}, component, data || {}));
-
-                return $view;
+                return this.$templates[t].content.clone();
             }
         }
-        return $("<app-notfound />");
+        return null;
     }
     
     protected loadTemplate(input: any) {
@@ -182,7 +211,8 @@ abstract class Component {
             this.$templates.push(template);
             (function (template) {
                 fetch(template.url).then((response) => {
-                    return response.text();
+                    let body = response.text();
+                    return body;
                 }).then((body) => {
                     template.content = $("<app-" + template.name + " />").append($(body));
                     template.loaded = true;
@@ -218,8 +248,9 @@ abstract class Component {
                         reply.ref = reply.ref[parts[p].replace(arr[0], "")][arr[1]];
                 }
                 else {
-                    // check it exists on `data`
-                    if (typeof(stuff[parts[p]]) == "undefined") {
+                    
+                    // check it exists on `data` OR what if `stuff` is null?
+                    if (stuff == null || typeof (stuff[parts[p]]) == "undefined") {
                         console.log(parts[p] + " not found in object: ", stuff);
                         return reply;
                     }
@@ -244,6 +275,7 @@ abstract class Component {
         }
         catch (ex) {
             console.log("execption: ", ex);
+            console.log("reply: ", reply);
         }
         //console.log("Component.parseStructure() out: ", { strut: strut, data: data });
         return reply;   
@@ -269,13 +301,16 @@ abstract class Component {
         return content;
     }
     private functionVal(callSignature, component, data) {
-
         // do we have parameters
         let func = callSignature.split("(");
         let val = null;
-        if (func[1])
+        if (func[1]) {
             val = this.textMultiMatch(func[1].substr(0, func[1].length - 1), component, data);
+        }
+
+
         return val;
+
     }
     
     protected bind($template: JQuery, data: any): void {
@@ -284,23 +319,48 @@ abstract class Component {
         let component = this;
         
         function walk($el: JQuery) {
-            processEl($el);
-            $el = $el.children().first();
-            while ($el.length) {
-                walk($el);
-                $el = $el.next();
+            let processChildren = processEl($el);
+            if (processChildren) {
+                $el = $el.children().first();
+                while ($el.length) {
+                    walk($el);
+                    $el = $el.next();
+                }
             }
         }
-        function processEl($el: JQuery) {
+        function processEl($el: JQuery): boolean {
             let $this = $el;
             try {
+
+                // override.... so we can skip sections of the template and bind later if we want to
+                // the value can be what ever you like so long as its truthy, but use "true"
+                let noBind = $this.data("no-bind");
+                if (noBind) {
+                    if (config.verboseMessages)
+                        console.log("VERBOSE:: Component.bind().processEl() - Not binding: ", $el);
+                    return false;
+                }
+
                 // process?
                 let cont = $this.data("bind-if");
                 if (cont) {
-                    if (!component.parseStructure(cont, component, data).value ? true : false) {
+                    $this.data("bind-if", null);
+                    let comparison = component.processBindComparison(cont, component, data);
+                    // these are oposite - as we are removing if NOT, rather than adding if TRUE
+                    if (!comparison || (comparison == null && !component.parseStructure(cont, component, data).value ? true : false)) {
                         // stop walking, but mark this node for deletion.... this is to keep the structure intact otherwise .next() isn't there.
                         $this.addClass("dom-remove");
-                        return;
+                        return false;
+                    }
+                }
+
+                // special cases - binding internal processing
+                let control = $this.data("bind-control");
+                if (control) {
+                    switch (control) {
+                        case "tabs":
+                            component.tabControl($this);
+                            break;
                     }
                 }
 
@@ -361,95 +421,187 @@ abstract class Component {
                     $this.val(val);
                 }
 
-                // prop
+                // prop, prop1, prop2, prop3
                 let prop = $this.data("bind-prop");
                 if (prop) {
                     $this.data("bind-prop", null);
-                    let conf = prop.split(":");
-                    // incase the value has : in it .join(":")
-                    let property = conf[0];
-                    conf.splice(0, 1)
-                    conf = conf.join(":");
-                    // is this a boolean attribute?
-                    let booleanAttr = false;
-                    for (let b = 0; b < component.htmlBooleanAttrs.length; b++){
-                        if (component.htmlBooleanAttrs[b] == property) {
-                            booleanAttr = true;
-                            break;
-                        }
-                    }
-                    if (booleanAttr) {
-                        let val = component.textMultiMatch(conf, component, data);
-                        $this.prop(property, val=="true");
-                    }
-                    else
-                        $this.attr(property, component.textMultiMatch(conf, component, data));
+                    component.processBindProp($this, prop, component, data);
+                }
+                let prop1 = $this.data("bind-prop1");
+                if (prop1) {
+                    $this.data("bind-prop1", null);
+                    component.processBindProp($this, prop1, component, data);
+                }
+                let prop2 = $this.data("bind-prop2");
+                if (prop1) {
+                    $this.data("bind-prop2", null);
+                    component.processBindProp($this, prop2, component, data);
+                }
+                let prop3 = $this.data("bind-prop3");
+                if (prop3) {
+                    $this.data("bind-prop3", null);
+                    component.processBindProp($this, prop3, component, data);
                 }
 
-                // class
+                // class - DEPRECEATED, use data-bind-load
                 let style = $this.data("bind-style");
                 if (style) {
+                    console.warn("JSPA:: bind-style called use bind-load instead function: ", style);
                     $this.data("bind-style", null);
-                    let func = style.split("(");
-                    let val = component.functionVal(style, component, data);
-                    if (component[func[0]])
-                        component[func[0]]({ $el: $this, component: component, data: data, value: val });
-                    else
-                        console.log("data-bind-style on " + component.constructor.name + " assigned to non-existant method: ", { method: func[0], component: component });
+                    // if there is a load set already this gets thrown away
+                    if(!$this.data("bind-load"))
+                        $this.data("bind-load", style);
                 }
 
+                // as loads
+                let load = $this.data("bind-load");
+                if (load) {
+                    $this.data("bind-load", null);
+                    let func = load.split("(");
+                    let val = component.functionVal(load, component, data);
+                    if (component[func[0]])
+                        //
+                        component[func[0]](new JSPAEvent({ $el: $this, component: component, data: data, value: val, evt: new $.Event("load") }));
+                    else
+                        console.warn("data-bind-load on " + component.constructor.name + " assigned to non-existant method: ", { method: func[0], component: component });
+                }
+                
+                
                 // click events
                 let click = $this.data("bind-click");
                 if (click) {
-                    $this.data("bind-click", null);
-                    let func = click.split("(");
-                    let val = component.functionVal(click, component, data);
-                    $this.click(function (evt) {
-                        if (component[func[0]]) {
-                            component[func[0]](new JSPAEvent({ $el: $this, component: component, data: data, value: val, evt: evt }));
-                        }
-                        else
-                            console.log("data-bind-click on " + component.constructor.name + " assigned to non-existant method: ", { method: func[0], component: component });
-                    });
+                    component.bindJSPAEvent(component, $this, "click", click, data);
+                }
+
+                // mouse moving
+                let mouse = $this.data("bind-mouse");
+                if (mouse) {
+                    component.bindJSPAEvent(component, $this, "mousemove", mouse, data);
                 }
 
                 // change events
                 let change = $this.data("bind-change");
                 if (change) {
-                    $this.data("bind-change", null);
-                    let func = change.split("(");
-                    let val = component.functionVal(change, component, data);
-                    $this.change(function (evt) {
-                        if (component[func[0]])
-                            component[func[0]](new JSPAEvent({ $el: $this, component: component, data: data, value: val, evt: evt }));
-                        else
-                            console.log("data-bind-change on " + component.constructor.name + " assigned to non-existant method: ", { method: func[0], component: component });
-                    });
+                    component.bindJSPAEvent(component, $this, "change", change, data);
+                }
+                
+                // key-press
+                let keydown = $this.data("bind-keydown");
+                if (keydown) {
+                    component.bindJSPAEvent(component, $this, "keydown", keydown, data);
+                }
+                let keyup = $this.data("bind-keyup");
+                if (keyup) {
+                    component.bindJSPAEvent(component, $this, "keyup", keyup, data);
                 }
 
-                // key-press
-                let keydown = $this.data("bind-key");
-                if (keydown) {
-                    $this.data("bind-key", null);
-                    $this.keydown(function (evt) {
-                        if (component[keydown])
-                            component[keydown](new JSPAEvent({ $el: $this, component: component, data: data, value: evt.which, evt: evt }));
-                        else
-                            console.log("data-bind-key on " + component.constructor.name + " assigned to non-existant method");
-                    });
+                // blur
+                let blur = $this.data("bind-blur");
+                if (blur) {
+                    component.bindJSPAEvent(component, $this, "blur", blur, data);
                 }
             }
             catch (ex) {
                 console.log("Component.bind().processEl() ERROR: ", { error: ex, component: component, data: data });
             }
-        }
+            return true;
+        } // endof processEl
+
         walk($template);
         // remove anything flagged for removal
         $template.find(".dom-remove").remove();
-        
     }
+
+    private bindJSPAEvent(component: any, $this: JQuery, type: string, bindEvent: any, data: any) {
+        $this.data("bind-" + type, null); // this is only the JQuery version
+        $this.attr("data-bind-" + type, null); // this is the DOM version
+
+        let func = bindEvent.split("(");
+        let val = component.functionVal(bindEvent, component, data);
+
+        $this.on(type, function (evt) {
+            if (component[func[0]])
+                component[func[0]](new JSPAEvent({ $el: $this, component: component, data: data, value: val || evt.which, evt: evt }));
+            else
+                console.warn("data-bind-" + type + " on " + component.constructor.name + " assigned to non-existant method", { method: func[0], component: component });
+        });
+    }
+    // so we can have multiples, lable tham as data-bind-prop, or data-bind-prop1 / data-bind-prop2 / data-bind-prop3
+    // as you can use prop && prop1 technically this means you can have 4 in total
+    private processBindProp($this: JQuery, prop: any, component: any, data: any) {
+        
+        let conf = prop.split(":");
+        // incase the value has : in it .join(":")
+        let property = conf[0];
+        conf.splice(0, 1)
+        conf = conf.join(":");
+        // is this a boolean attribute?
+        let booleanAttr = false;
+        for (let b = 0; b < component.htmlBooleanAttrs.length; b++) {
+            if (component.htmlBooleanAttrs[b] == property) {
+                booleanAttr = true;
+                break;
+            }
+        }
+        // console.log("processBindProp()", { prop: property, boolean: booleanAttr });
+
+        if (booleanAttr) {
+            // handler for comparisons - format data-bind-prop="disabled:is({{ dataStore.thing }},'sausages'))"
+            if (conf.indexOf("is(") == 0 || conf.indexOf("not(") == 0) {
+
+                let comparison = component.processBindComparison(conf, component, data);
+                $this.prop(property, comparison);
+                
+            }
+            else {
+                // we toLower it so the pipe asBoloean can be used - returns the title cased version
+                let val = component.textMultiMatch(conf, component, data).toLowerCase();
+                $this.prop(property, val == "true");
+            }
+        }
+        else
+            $this.attr(property, component.textMultiMatch(conf, component, data));
+    }
+
+    private processBindComparison(conf: any, component: any, data: any): any {
+        if (conf.indexOf("is(") == 0 || conf.indexOf("not(") == 0) {
+            // extract the contents between the brackets
+            let variables = /\((.*?)\)/.exec(conf)[1].split(",");
+            // get the value of the variable
+            let val1 = component.textMultiMatch(variables[0], component, data);
+            let val2 = component.textMultiMatch(variables[1], component, data);
+
+            //console.log("processBindComparison(): ", { conf: conf, compare: (conf.indexOf("is(") == 0 ? "is()" : "not()"), val1: val1, val2: val2, equal: (val1 == val2) });
+
+            // set the property to the result of a comparison of the two
+            if (conf.indexOf("is(") == 0) {
+                return (val1 == val2);
+            }
+            else { // it must be `not(`)
+                return (val1 != val2);
+            }
+        }
+        else
+            return null;
+    }
+
+    private tabControl($el): void {
+        // find all the .nav-item's that are children of this, and add a click event
+        $el.find(".nav-item").click(function (evt) {
+            let $navLink = $(this).find(".nav-link");
+            // clear the ".active" off all the siblings
+            $(this).siblings().find(".nav-link").removeClass("active");
+            $navLink.addClass("active");
+
+            // find its target
+            let $target = $el.next(".tab-content").find("#" + $navLink.data("target"));
+            $target.siblings().addClass("collapse");
+            $target.removeClass("collapse");
+        });
+    }
+
     // checks if the displayed value of a bound element has changed - data has to be whatever was passed in to the original
-    // also only works for attributes bond through data-bind-prop:value, or data-bind-options
+    // also only works for attributes bound through data-bind-prop:value, or data-bind-options
     private checkEl($el: JQuery, data: any) {
         let options = $el.data("bind-options");
         if (options) { return this.parseStructure(options, this, data) }
@@ -504,6 +656,10 @@ abstract class Component {
         });
 
         return reply;
+    }
+    // general UI updates
+    private switchChevron(src: JSPAEvent): void {
+        src.$el.find("i").toggleClass("fa-chevron-down fa-chevron-up");
     }
 }
 class Template {

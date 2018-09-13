@@ -22,3 +22,17 @@ class JSPAColour {
     public g: number = null;
     public b: number = null;
 }
+
+class JSPAEmit {
+    src: string;
+    data: any;
+    $parent: JQuery;
+    error: any;
+
+    constructor(src?: string, data?: any, $parent?: JQuery, error?: any) {
+        this.src = src || null;
+        this.data = data || null;
+        this.$parent = $parent || null;
+        this.error = error || null;
+    }
+}

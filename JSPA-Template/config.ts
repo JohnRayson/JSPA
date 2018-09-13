@@ -4,6 +4,7 @@ class Config {
     utils: Utils = new Utils();
     sessionStore: LocalStore = new LocalStore("session");
     api: Api = new Api("");
+    verboseMessages: boolean =  false;
 
     contentElementId: string = "application";
     
@@ -11,6 +12,11 @@ class Config {
         new Route("error/?code:number", ClientError), // must be first
         new Route("app-header", AppHeader),
         new Route("app-footer", AppFooter),
+
+        // QUnit tests
+        new Route("qunit", JSPATests),
+        new Route("qunit/?testId:query", JSPATests),
+
         // actual content pages
         new Route("", Home),
         new Route("component-1", Component1),

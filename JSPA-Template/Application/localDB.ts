@@ -77,7 +77,6 @@
         }).then((records) => {
             // should be only 1 (or none) as we used the full key
             if (!records[0] || records[0].signature != data.signature) {
-                console.log("LocalDB.checkForChanges() : ", { stored: records, new: data })
                 return { changed: true, data: data };
             }
             else {

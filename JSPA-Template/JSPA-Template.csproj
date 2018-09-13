@@ -23,7 +23,7 @@
     <UseGlobalApplicationHostFile />
     <NuGetPackageImportStamp>
     </NuGetPackageImportStamp>
-    <TypeScriptToolsVersion>2.3</TypeScriptToolsVersion>
+    <TypeScriptToolsVersion>2.8</TypeScriptToolsVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -71,7 +71,7 @@
     <Content Include="dist\js\application.js.map" />
     <Content Include="dist\libraries\cycle.js" />
     <Content Include="dist\libraries\highlight.pack.js" />
-    <Content Include="dist\libraries\moment.min.js" />
+    <Content Include="dist\libraries\qunit-2.6.1.js" />
     <Content Include="dist\webfonts\fa-brands-400.eot" />
     <Content Include="dist\webfonts\fa-brands-400.ttf" />
     <Content Include="dist\webfonts\fa-brands-400.woff" />
@@ -100,6 +100,7 @@
     <Content Include="dist\webfonts\fa-regular-400.svg" />
     <Content Include="dist\webfonts\fa-solid-900.svg" />
     <Content Include="index.html" />
+    <Content Include="QUnit.html" />
     <Content Include="scss\app.scss" />
     <Content Include="scss\bootstrap\bootstrap-grid.scss" />
     <Content Include="scss\bootstrap\bootstrap-reboot.scss" />
@@ -184,7 +185,6 @@
     <Content Include="scss\bootstrap\_type.scss" />
     <Content Include="scss\bootstrap\_utilities.scss" />
     <Content Include="scss\bootstrap\_variables.scss" />
-    <Content Include="serviceworker.js" />
     <Content Include="tsconfig.json" />
     <Content Include="scss\fontawesome\fa-brands.scss" />
     <Content Include="scss\fontawesome\fa-regular.scss" />
@@ -231,6 +231,8 @@
     <TypeScriptCompile Include="Application\component.ts" />
     <TypeScriptCompile Include="Application\localDB.ts" />
     <TypeScriptCompile Include="Application\localStore.ts" />
+    <TypeScriptCompile Include="Application\models.ts" />
+    <TypeScriptCompile Include="Application\QUnit-tests.ts" />
     <TypeScriptCompile Include="Application\routing.ts" />
     <TypeScriptCompile Include="Application\utils.ts" />
     <TypeScriptCompile Include="Components\app-footer\app-footer.ts" />
@@ -241,6 +243,7 @@
     <TypeScriptCompile Include="config.ts" />
     <TypeScriptCompile Include="Scripts\typings\jquery\jquery.d.ts" />
     <TypeScriptCompile Include="Scripts\typings\jquery\plugin.d.ts" />
+    <TypeScriptCompile Include="Scripts\typings\promisedIndexDB.d.ts" />
     <TypeScriptCompile Include="Scripts\typings\typings.d.ts" />
     <TypeScriptCompile Include="Services\pipes.ts" />
   </ItemGroup>
@@ -259,7 +262,16 @@
     <VisualStudio>
       <FlavorProperties GUID="{349c5851-65df-11da-9384-00065b846f21}">
         <WebProjectProperties>
-          <SaveServerSettingsInUserFile>True</SaveServerSettingsInUserFile>
+          <UseIIS>True</UseIIS>
+          <AutoAssignPort>True</AutoAssignPort>
+          <DevelopmentServerPort>56149</DevelopmentServerPort>
+          <DevelopmentServerVPath>/</DevelopmentServerVPath>
+          <IISUrl>http://localhost:56149/</IISUrl>
+          <NTLMAuthentication>False</NTLMAuthentication>
+          <UseCustomServer>False</UseCustomServer>
+          <CustomServerUrl>
+          </CustomServerUrl>
+          <SaveServerSettingsInUserFile>False</SaveServerSettingsInUserFile>
         </WebProjectProperties>
       </FlavorProperties>
     </VisualStudio>

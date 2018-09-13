@@ -45,8 +45,8 @@ class ClientError extends Component{
         let password = this.$view.find("#401-password").val();
 
         config.api.auth({
-            EmailAddress: user,
-            Password: password,
+            EmailAddress: "berty.biscuit@bertybiscuits.co.uk",
+            Password: "Sausages",
             PhoneNumber: null
         }).then(() => {
             // reload the current url - unless, its an error page - then load the home page

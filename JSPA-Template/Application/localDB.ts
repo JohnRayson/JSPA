@@ -114,6 +114,17 @@
         });
     }
 
+	// https://stackoverflow.com/a/18418386
+    public sqlLike(value: string, like: string): boolean {
+        if (typeof like !== 'string' || this === null) { return false; }
+        // Remove special chars
+        like = like.replace(new RegExp("([\\.\\\\\\+\\*\\?\\[\\^\\]\\$\\(\\)\\{\\}\\=\\!\\<\\>\\|\\:\\-])", "g"), "\\$1");
+        // Replace % and _ with equivalent regex
+        like = like.replace(/%/g, '.*').replace(/_/g, '.');
+        // Check matches
+        return RegExp('^' + like + '$', 'gi').test(value);
+    }
+	
     public createDataHash(data: any): number {
         let str = JSON.stringify(data);
         let hash = 0, i, chr;

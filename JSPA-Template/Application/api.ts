@@ -62,13 +62,16 @@ class Api {
             api.token = null;
             window.sessionStorage.removeItem("token");
             api.headers["X-Authentication"] = "";
+
+            if ($.isFunction(config.logout))
+                config.logout();
         });
     }
 
     private send(request: ApiRequest): Promise<any> {
+        //console.freeze("Api.send(): ", request.url);
         return new Promise((resolve, reject) => {
             $.ajax(request).always((data, textStatus, jqXHR) => {
-                //console.log(request.method + " " + request.url + " -> " + textStatus);
                 // failed responses have the 1st and last variables reversed... for some reason https://api.jquery.com/jQuery.ajax/
                 if (!jqXHR.status) {
                     let tmp = data;
@@ -112,7 +115,7 @@ class Api {
                 // bad request  == 400
                 // forbidden    == 403, “I’m sorry. I know who you are–I believe who you say you are–but you just don’t have permission to access this resource. Maybe if you ask the system administrator nicely, you’ll get permission. But please don’t bother me again until your predicament changes.”
                 if (jqXHR.status == 400 || jqXHR.status == 403) {
-                    console.log("Api.send(): ", jqXHR.status);
+                    //console.log("Api.send(): ", jqXHR.status); // JQuery logs it with the URL anyway
                 }
 
                 // if we havn't already returned return a reject()
@@ -133,6 +136,7 @@ class Api {
     }
 
     private subsriptions: Subscription[] = []
+    private subscriptionsPaused: boolean = false;
     public subscribe(path: string, options: ApiRequestOptions, success: any, fail: any): string {
         let sub: Subscription = null;
         // find it
@@ -175,7 +179,10 @@ class Api {
 
         // if its not already running - start it
         if (sub.state() == "stopped") {
-            sub.start();
+            if (this.subscriptionsPaused)
+                sub.pause();
+            else
+                sub.start();
         }
 
         return ref;
@@ -208,6 +215,8 @@ class Api {
         }
     }
     public pauseSubscriptions(): void {
+        // set this flag so new subscriptions can be paused
+        this.subscriptionsPaused = true;
         // stops all the setIntervals, and sets the state to "paused"
         for (let i = 0; i < this.subsriptions.length; i++) {
             if (this.subsriptions[i].state() == "running")
@@ -215,6 +224,8 @@ class Api {
         }
     }
     public resumeSubscriptions(): void {
+        // clear this flag so new subscriptions can be run
+        this.subscriptionsPaused = false;
         // restarts all subscriptions where the state is "paused"
         for (let i = 0; i < this.subsriptions.length; i++) {
             if (this.subsriptions[i].state() == "paused")
@@ -225,7 +236,7 @@ class Api {
 
     public get(path: string, options?: ApiRequestOptions): Promise<any> {
         return new Promise((resolve, reject) => {
-
+            //console.freeze("Api.get(): ", path);
             let request = this.createRequest(this.baseHref + path);
             let getReply = null;
 
@@ -234,7 +245,7 @@ class Api {
                 this.localDb.retrieve(options.datastore, function (item) {
                     let matched = true;
                     for (let member in options.retrieve) {
-                        if (item.value[member] !== options.retrieve[member])
+                        if (!this.localDb.sqlLike(item.value[member], options.retrieve[member])) // item.value[member] !== options.retrieve[member])
                             matched = false;
                     }
                     if (matched)

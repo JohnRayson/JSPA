@@ -352,6 +352,7 @@ abstract class Component {
                         $this.addClass("dom-remove");
                         return false;
                     }
+                    
                 }
 
                 // special cases - binding internal processing
@@ -365,9 +366,14 @@ abstract class Component {
                 }
 
                 // in line templates, has to be first - once we know we are doing anything, as the contents get popped off.
-                let multiple = $this.data("bind-for");
+                let multiple:string = $this.data("bind-for");
                 if (multiple) {
                     $this.data("bind-for", null);
+
+                    // we have an option to attach parent, using th pipe syntax
+                    let options = multiple.split("|");
+                    multiple = options[0];
+
                     (function ($this: JQuery, multiple: string, component: any, data: any) { 
                         let $template = $this.children().clone();
                         let info = component.parseStructure(multiple, component, data);
@@ -380,8 +386,11 @@ abstract class Component {
                         (function ($this: any, $template: JQuery, info: any) {
                             for (let i = 0; i < info.length; i++) {
                                 let $new = $template.clone();
-                                info[i].JSPA = i;
                                 component.bind($new, info[i]);
+                                // add this after the bind- for performance reasons
+                                if(options[1] == "includeParent")
+                                    info[i].JSPA = { array: multiple, index: i, parent: data };
+
                                 $this.append($new);
                             }
                         })($this, $template, info.value);

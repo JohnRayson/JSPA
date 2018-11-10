@@ -63,8 +63,8 @@ class Api {
             window.sessionStorage.removeItem("token");
             api.headers["X-Authentication"] = "";
 
-            if ($.isFunction(config.logout))
-                config.logout();
+            if ($.isFunction(config["logout"]))
+                config["logout"]();
         });
     }
 

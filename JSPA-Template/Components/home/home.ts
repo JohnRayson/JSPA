@@ -22,7 +22,7 @@ class Home extends Component {
 
     draw(args: any): Promise<JQuery> {
 
-        this.setTitle("CRT MEICA / SCADA");
+        this.setTitle("JSPA");
         
         return new Promise((resolve) => {
             // call the API, or grab something from the local store etc

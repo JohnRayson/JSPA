@@ -50,6 +50,7 @@ var Api = (function () {
             "Accept": "application/json, text/plain, */*;" + (this.apiVersion > 0 ? "version=" + this.apiVersion + ";" : "")
         };
         this.subsriptions = [];
+        this.subscriptionsPaused = false;
         if (baseHref)
             this.baseHref = baseHref;
         this.isAuthenticated();
@@ -87,6 +88,8 @@ var Api = (function () {
             api.token = null;
             window.sessionStorage.removeItem("token");
             api.headers["X-Authentication"] = "";
+            if ($.isFunction(config["logout"]))
+                config["logout"]();
         });
     };
     Api.prototype.send = function (request) {
@@ -119,7 +122,6 @@ var Api = (function () {
                     });
                 }
                 if (jqXHR.status == 400 || jqXHR.status == 403) {
-                    console.log("Api.send(): ", jqXHR.status);
                 }
                 return reject(jqXHR);
             });
@@ -167,7 +169,10 @@ var Api = (function () {
             fail(rej);
         });
         if (sub.state() == "stopped") {
-            sub.start();
+            if (this.subscriptionsPaused)
+                sub.pause();
+            else
+                sub.start();
         }
         return ref;
     };
@@ -188,12 +193,14 @@ var Api = (function () {
         }
     };
     Api.prototype.pauseSubscriptions = function () {
+        this.subscriptionsPaused = true;
         for (var i = 0; i < this.subsriptions.length; i++) {
             if (this.subsriptions[i].state() == "running")
                 this.subsriptions[i].pause();
         }
     };
     Api.prototype.resumeSubscriptions = function () {
+        this.subscriptionsPaused = false;
         for (var i = 0; i < this.subsriptions.length; i++) {
             if (this.subsriptions[i].state() == "paused")
                 this.subsriptions[i].start();
@@ -208,7 +215,7 @@ var Api = (function () {
                 _this.localDb.retrieve(options.datastore, function (item) {
                     var matched = true;
                     for (var member in options.retrieve) {
-                        if (item.value[member] !== options.retrieve[member])
+                        if (!this.localDb.sqlLike(item.value[member], options.retrieve[member]))
                             matched = false;
                     }
                     if (matched)
@@ -975,6 +982,8 @@ var Component = (function () {
                 var multiple = $this.data("bind-for");
                 if (multiple) {
                     $this.data("bind-for", null);
+                    var options_1 = multiple.split("|");
+                    multiple = options_1[0];
                     (function ($this, multiple, component, data) {
                         var $template = $this.children().clone();
                         var info = component.parseStructure(multiple, component, data);
@@ -984,8 +993,9 @@ var Component = (function () {
                         (function ($this, $template, info) {
                             for (var i = 0; i < info.length; i++) {
                                 var $new = $template.clone();
-                                info[i].JSPA = i;
                                 component.bind($new, info[i]);
+                                if (options_1[1] == "includeParent")
+                                    info[i].JSPA = { array: multiple, index: i, parent: data };
                                 $this.append($new);
                             }
                         })($this, $template, info.value);
@@ -1306,6 +1316,14 @@ var LocalDB = (function () {
                 resolve(reply);
             });
         });
+    };
+    LocalDB.prototype.sqlLike = function (value, like) {
+        if (typeof like !== 'string' || this === null) {
+            return false;
+        }
+        like = like.replace(new RegExp("([\\.\\\\\\+\\*\\?\\[\\^\\]\\$\\(\\)\\{\\}\\=\\!\\<\\>\\|\\:\\-])", "g"), "\\$1");
+        like = like.replace(/%/g, '.*').replace(/_/g, '.');
+        return RegExp('^' + like + '$', 'gi').test(value);
     };
     LocalDB.prototype.createDataHash = function (data) {
         var str = JSON.stringify(data);
@@ -1826,7 +1844,7 @@ var Home = (function (_super) {
     };
     Home.prototype.draw = function (args) {
         var _this = this;
-        this.setTitle("CRT MEICA / SCADA");
+        this.setTitle("JSPA");
         return new Promise(function (resolve) {
             _this.dataStore = [];
             resolve(_this.render());

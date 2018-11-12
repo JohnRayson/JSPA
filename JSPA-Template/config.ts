@@ -20,6 +20,7 @@ class Config {
         // actual content pages
         new Route("", Home),
         new Route("component-1", Component1),
+        new Route("component-2", Component2),
     ];
 
     database: any = {

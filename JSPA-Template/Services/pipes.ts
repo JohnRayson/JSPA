@@ -33,4 +33,10 @@ class Pipes {
             return "";
         return value
     }
+
+    public toValidDomId(value: string): string {
+        let ex = new RegExp("[\\s,]", "gi");
+        let id: string = value.replace(ex, "-");
+        return id;
+    }
 }

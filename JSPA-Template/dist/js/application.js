@@ -13,6 +13,7 @@ var Config = (function () {
             new Route("qunit/?testId:query", JSPATests),
             new Route("", Home),
             new Route("component-1", Component1),
+            new Route("component-2", Component2),
         ];
         this.database = {
             name: "jquery-spa",
@@ -38,6 +39,641 @@ var Config = (function () {
     };
     return Config;
 }());
+var Pipes = (function () {
+    function Pipes() {
+    }
+    Pipes.prototype.displayDateTime = function (utc) {
+        if (!utc)
+            return "";
+        var parts = utc.split("T");
+        if (parts[0] === "0001-01-01")
+            return "";
+        if (parts.length != 2)
+            return utc;
+        var dateBits = parts[0].split("-");
+        if (dateBits.length != 3)
+            return utc;
+        return dateBits[2] + "/" + dateBits[1] + "/" + dateBits[0] + " " + parts[1].replace("Z", "").split(".")[0];
+    };
+    Pipes.prototype.addGMT = function (date) {
+        if (date.length > 0)
+            return date + " (GMT)";
+        else
+            return date;
+    };
+    Pipes.prototype.removeNull = function (value) {
+        if (value == null || value.toLowerCase() == "null")
+            return "";
+        return value;
+    };
+    Pipes.prototype.toValidDomId = function (value) {
+        var ex = new RegExp("[\\s,]", "gi");
+        var id = value.replace(ex, "-");
+        return id;
+    };
+    return Pipes;
+}());
+var Component = (function () {
+    function Component(templates, parent) {
+        this.formater = new Pipes();
+        this.parent = null;
+        this.subscriptions = [];
+        this.htmlBooleanAttrs = [
+            'checked', 'selected', 'disabled', 'readonly', 'multiple', 'ismap', 'noresize'
+        ];
+        this.$templates = [];
+        this.waitTimeout = null;
+        this.placeHolderPattern = "{{([\w]*) (.*?) }}";
+        this.placeHolderExr = new RegExp("{{([\w]*) (.*?) }}", "g");
+        this.arrayExr = new RegExp("\\[([0-9]{1,})(.*?)\\]", "g");
+        this.id = app.utils.createUUID();
+        if (templates)
+            this.loadTemplate(templates);
+        if (parent) {
+            this.parent = app.utils.createUUID();
+            app.recievers[this.parent] = parent;
+        }
+    }
+    Component.prototype.blur = function (route) {
+        this.blurOther();
+        while (this.subscriptions.length > 0)
+            this.unsubscribe(this.subscriptions[0]);
+        this.$view.empty();
+        if (route) {
+            route.component = new route.srcComponent();
+        }
+    };
+    Component.prototype.blurOther = function () {
+    };
+    Component.prototype.postDraw = function () {
+        this.drawn();
+    };
+    Component.prototype.drawn = function () {
+    };
+    Component.prototype.subscribe = function (path, options, success, fail) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var ref = config.api.subscribe(path, options, success, fail);
+            _this.subscriptions.push(ref);
+            resolve(ref);
+        });
+    };
+    Component.prototype.unsubscribe = function (ref) {
+        for (var s = 0; s < this.subscriptions.length; s++) {
+            if (this.subscriptions[s] == ref) {
+                config.api.unsubscribe(this.subscriptions[s]);
+                this.subscriptions.splice(s, 1);
+            }
+        }
+    };
+    Component.prototype.recieve = function (data) {
+        console.log("Recieved data, but " + this.constructor.name + " doesn't impliment recieve():", data);
+    };
+    Component.prototype.emit = function (data, $holder) {
+        var reply = new JSPAEmit(this.constructor.name, data, $holder);
+        this.callParent("recieve", reply);
+    };
+    Component.prototype.callParent = function (func, args) {
+        if (this.parent)
+            return app.recievers[this.parent][func](args);
+        return null;
+    };
+    Component.prototype.waitingOnAsync = function () {
+        for (var t = 0; t < this.$templates.length; t++) {
+            if (this.$templates[t].loaded === false)
+                return true;
+        }
+        return false;
+    };
+    Component.prototype.setTitle = function (title) {
+        document.title = title;
+    };
+    Component.prototype.hasTemplate = function (search) {
+        for (var t = 0; t < this.$templates.length; t++) {
+            if (this.$templates[t].name == search) {
+                return true;
+            }
+        }
+        return false;
+    };
+    Component.prototype.waitOnData = function () {
+        var waitCount = 0;
+        var id = app.utils.createUUID();
+        var message = "Waiting on data";
+        this.$view = $("<app-waiting style='padding: 5px; text-align: center;' />").attr("id", id)
+            .append($("<div />").addClass("max-width-md")
+            .append($("<h1 />").text(message))
+            .append($("<div />").addClass("progress")
+            .append($("<div role='progressbar' aria-valuenow='100' aria-valuemin='0' aria-valuemax='100' />")
+            .addClass("progress-bar progress-bar-striped progress-bar-animated")
+            .css({ width: "100%" }))));
+        var updateMsg = function () {
+            if (waitCount < 10) {
+                waitCount++;
+                this.waitTimeout = window.setTimeout(function () {
+                    message = message + ".";
+                    $("#" + id).find($("h1")).text(message);
+                    updateMsg();
+                }, 1000);
+            }
+            else {
+                $("#" + id).find("div:first")
+                    .append("<br />")
+                    .append($("<button type='button' class='btn btn-info' /></button>")
+                    .append("<span>Go Back</span>")
+                    .click(function () {
+                    window.history.back();
+                }))
+                    .find($("h1")).text("No data recieved");
+                $("#" + id).find(".progress").toggleClass("progress collapse");
+            }
+        };
+        updateMsg();
+        return this.$view;
+    };
+    Component.prototype.getTemplate = function (search, data) {
+        if (this.waitTimeout != null) {
+            window.clearTimeout(this.waitTimeout);
+            this.waitTimeout = null;
+        }
+        var component = this;
+        this.$view = this.getTemplateJQuery(search);
+        if (this.$view) {
+            this.bind(this.$view, $.extend({}, component, data || {}));
+            return this.$view;
+        }
+        return $("<app-notfound />");
+    };
+    Component.prototype.getSubTemplate = function (search, data) {
+        var component = this;
+        var $view = this.getTemplateJQuery(search);
+        if ($view) {
+            this.bind($view, $.extend({}, component, data || {}));
+            return $view;
+        }
+        return $("<app-notfound />");
+    };
+    Component.prototype.getTemplateJQuery = function (search) {
+        for (var t = 0; t < this.$templates.length; t++) {
+            if (this.$templates[t].name == search) {
+                return this.$templates[t].content.clone();
+            }
+        }
+        return null;
+    };
+    Component.prototype.loadTemplate = function (input) {
+        if ($.type(input) !== "array") {
+            var temp = input;
+            input = [];
+            input.push(temp);
+        }
+        for (var t = 0; t < input.length; t++) {
+            var template = void 0;
+            if ($.type(input[t]) === "string")
+                template = new Template(input[t]);
+            else
+                template = new Template(input[t].url, input[t].name);
+            this.$templates.push(template);
+            (function (template) {
+                fetch(template.url).then(function (response) {
+                    var body = response.text();
+                    return body;
+                }).then(function (body) {
+                    template.content = $("<app-" + template.name + " />").append($(body));
+                    template.loaded = true;
+                });
+            })(template);
+        }
+    };
+    Component.prototype.parseStructure = function (strut, component, data) {
+        var reply = { ref: data, variable: null, value: null };
+        try {
+            var pipes = strut.split("|");
+            var parts = pipes[0].split(".");
+            var stuff = JSON.clone(data);
+            var arr = null;
+            for (var p = 0; p < parts.length; p++) {
+                component.arrayExr.lastIndex = 0;
+                reply.variable = parts[p];
+                if ((arr = component.arrayExr.exec(parts[p])) != null) {
+                    stuff = stuff[parts[p].replace(arr[0], "")][arr[1]];
+                    if (p < (parts.length - 1))
+                        reply.ref = reply.ref[parts[p].replace(arr[0], "")][arr[1]];
+                }
+                else {
+                    if (stuff == null || typeof (stuff[parts[p]]) == "undefined") {
+                        console.log(parts[p] + " not found in object: ", stuff);
+                        return reply;
+                    }
+                    stuff = stuff[parts[p]];
+                    if (p < (parts.length - 1))
+                        reply.ref = reply.ref[parts[p]];
+                }
+            }
+            reply.value = stuff;
+            for (var pipe = 1; pipe < pipes.length; pipe++) {
+                if (typeof (component.formater[pipes[pipe]]) != "undefined")
+                    reply.value = component.formater[pipes[pipe]](reply.value);
+                else {
+                    console.log("ERROR - Pipe not found: " + pipes[pipe] + "; Piping stopped for this chain");
+                    break;
+                }
+            }
+        }
+        catch (ex) {
+            console.log("execption: ", ex);
+            console.log("reply: ", reply);
+        }
+        return reply;
+    };
+    Component.prototype.textMultiMatch = function (content, component, data) {
+        var match = null;
+        var matches = [];
+        var regEx = new RegExp(component.placeHolderPattern, "g");
+        while ((match = regEx.exec(content)) != null) {
+            var thisMatch = {
+                pattern: "{{ " + match[2] + " }}",
+                value: this.parseStructure(match[2], component, data).value
+            };
+            matches.push(thisMatch);
+        }
+        for (var m = 0; m < matches.length; m++) {
+            content = content.replace(matches[m].pattern, matches[m].value);
+        }
+        return content;
+    };
+    Component.prototype.functionVal = function (callSignature, component, data) {
+        var func = callSignature.split("(");
+        var val = null;
+        if (func[1]) {
+            val = this.textMultiMatch(func[1].substr(0, func[1].length - 1), component, data);
+        }
+        return val;
+    };
+    Component.prototype.bind = function ($template, data) {
+        var bindref = new Utils().createUUID();
+        var component = this;
+        function walk($el) {
+            var processChildren = processEl($el);
+            if (processChildren) {
+                $el = $el.children().first();
+                while ($el.length) {
+                    walk($el);
+                    $el = $el.next();
+                }
+            }
+        }
+        function processEl($el) {
+            var $this = $el;
+            try {
+                var noBind = $this.data("no-bind");
+                if (noBind) {
+                    if (config.verboseMessages)
+                        console.log("VERBOSE:: Component.bind().processEl() - Not binding: ", $el);
+                    return false;
+                }
+                var cont = $this.data("bind-if");
+                if (cont) {
+                    $this.data("bind-if", null);
+                    var comparison = component.processBindComparison(cont, component, data);
+                    if (!comparison || (comparison == null && !component.parseStructure(cont, component, data).value ? true : false)) {
+                        $this.addClass("dom-remove");
+                        return false;
+                    }
+                }
+                var control = $this.data("bind-control");
+                if (control) {
+                    switch (control) {
+                        case "tabs":
+                            component.tabControl($this);
+                            break;
+                    }
+                }
+                var multiple = $this.data("bind-for");
+                if (multiple) {
+                    $this.data("bind-for", null);
+                    var options_1 = multiple.split("|");
+                    multiple = options_1[0];
+                    (function ($this, multiple, component, data) {
+                        var $template = $this.children().clone();
+                        var info = component.parseStructure(multiple, component, data);
+                        $this.empty();
+                        if (!info.value)
+                            return;
+                        (function ($this, $template, info) {
+                            for (var i = 0; i < info.length; i++) {
+                                var $new = $template.clone();
+                                component.bind($new, info[i]);
+                                if (options_1[1] == "includeParent")
+                                    info[i].JSPA = { array: multiple, index: i, parent: data };
+                                $this.append($new);
+                            }
+                        })($this, $template, info.value);
+                    })($this, multiple, component, data);
+                }
+                var textNodes = $this.textNodes();
+                var match = null;
+                var arr = null;
+                for (var n = 0; n < textNodes.length; n++) {
+                    var content = textNodes[n].nodeValue;
+                    textNodes[n].nodeValue = component.textMultiMatch(content, component, data);
+                }
+                var valueAttribute = $this.val();
+                if (valueAttribute) {
+                    var valueExpr = new RegExp(component.placeHolderPattern, "g");
+                    var match_1 = valueExpr.exec(valueAttribute);
+                    if (match_1) {
+                        $this.addClass("jspa-data-bound");
+                        $this.data("value-src", match_1[2]);
+                        $this.val(component.parseStructure(match_1[2], component, data).value);
+                    }
+                }
+                var options = $this.data("bind-options");
+                if (options) {
+                    var val = component.parseStructure(options, component, data).value;
+                    $this.val(val);
+                }
+                var prop = $this.data("bind-prop");
+                if (prop) {
+                    $this.data("bind-prop", null);
+                    component.processBindProp($this, prop, component, data);
+                }
+                var prop1 = $this.data("bind-prop1");
+                if (prop1) {
+                    $this.data("bind-prop1", null);
+                    component.processBindProp($this, prop1, component, data);
+                }
+                var prop2 = $this.data("bind-prop2");
+                if (prop1) {
+                    $this.data("bind-prop2", null);
+                    component.processBindProp($this, prop2, component, data);
+                }
+                var prop3 = $this.data("bind-prop3");
+                if (prop3) {
+                    $this.data("bind-prop3", null);
+                    component.processBindProp($this, prop3, component, data);
+                }
+                var style = $this.data("bind-style");
+                if (style) {
+                    console.warn("JSPA:: bind-style called use bind-load instead function: ", style);
+                    $this.data("bind-style", null);
+                    if (!$this.data("bind-load"))
+                        $this.data("bind-load", style);
+                }
+                var load = $this.data("bind-load");
+                if (load) {
+                    $this.data("bind-load", null);
+                    var func = load.split("(");
+                    var val = component.functionVal(load, component, data);
+                    if (component[func[0]])
+                        component[func[0]](new JSPAEvent({ $el: $this, component: component, data: data, value: val, evt: new $.Event("load") }));
+                    else
+                        console.warn("data-bind-load on " + component.constructor.name + " assigned to non-existant method: ", { method: func[0], component: component });
+                }
+                var click = $this.data("bind-click");
+                if (click) {
+                    component.bindJSPAEvent(component, $this, "click", click, data);
+                }
+                var mouse = $this.data("bind-mouse");
+                if (mouse) {
+                    component.bindJSPAEvent(component, $this, "mousemove", mouse, data);
+                }
+                var change = $this.data("bind-change");
+                if (change) {
+                    component.bindJSPAEvent(component, $this, "change", change, data);
+                }
+                var keydown = $this.data("bind-keydown");
+                if (keydown) {
+                    component.bindJSPAEvent(component, $this, "keydown", keydown, data);
+                }
+                var keyup = $this.data("bind-keyup");
+                if (keyup) {
+                    component.bindJSPAEvent(component, $this, "keyup", keyup, data);
+                }
+                var blur_1 = $this.data("bind-blur");
+                if (blur_1) {
+                    component.bindJSPAEvent(component, $this, "blur", blur_1, data);
+                }
+            }
+            catch (ex) {
+                console.log("Component.bind().processEl() ERROR: ", { error: ex, component: component, data: data });
+            }
+            return true;
+        }
+        walk($template);
+        $template.find(".dom-remove").remove();
+    };
+    Component.prototype.bindJSPAEvent = function (component, $this, type, bindEvent, data) {
+        $this.data("bind-" + type, null);
+        $this.attr("data-bind-" + type, null);
+        var func = bindEvent.split("(");
+        var val = component.functionVal(bindEvent, component, data);
+        $this.on(type, function (evt) {
+            if (component[func[0]])
+                component[func[0]](new JSPAEvent({ $el: $this, component: component, data: data, value: val || evt.which, evt: evt }));
+            else
+                console.warn("data-bind-" + type + " on " + component.constructor.name + " assigned to non-existant method", { method: func[0], component: component });
+        });
+    };
+    Component.prototype.processBindProp = function ($this, prop, component, data) {
+        var conf = prop.split(":");
+        var property = conf[0];
+        conf.splice(0, 1);
+        conf = conf.join(":");
+        var booleanAttr = false;
+        for (var b = 0; b < component.htmlBooleanAttrs.length; b++) {
+            if (component.htmlBooleanAttrs[b] == property) {
+                booleanAttr = true;
+                break;
+            }
+        }
+        if (booleanAttr) {
+            if (conf.indexOf("is(") == 0 || conf.indexOf("not(") == 0) {
+                var comparison = component.processBindComparison(conf, component, data);
+                $this.prop(property, comparison);
+            }
+            else {
+                var val = component.textMultiMatch(conf, component, data).toLowerCase();
+                $this.prop(property, val == "true");
+            }
+        }
+        else
+            $this.attr(property, component.textMultiMatch(conf, component, data));
+    };
+    Component.prototype.processBindComparison = function (conf, component, data) {
+        if (conf.indexOf("is(") == 0 || conf.indexOf("not(") == 0) {
+            var variables = /\((.*?)\)/.exec(conf)[1].split(",");
+            var val1 = component.textMultiMatch(variables[0], component, data);
+            var val2 = component.textMultiMatch(variables[1], component, data);
+            if (conf.indexOf("is(") == 0) {
+                return (val1 == val2);
+            }
+            else {
+                return (val1 != val2);
+            }
+        }
+        else
+            return null;
+    };
+    Component.prototype.tabControl = function ($el) {
+        $el.on("click", ".nav-item", function (evt) {
+            var $navLink = $(this).find(".nav-link");
+            $(this).siblings().find(".nav-link").removeClass("active");
+            $navLink.addClass("active");
+            var $target = $el.next(".tab-content").find("#" + $navLink.data("target"));
+            $target.siblings().addClass("collapse");
+            $target.removeClass("collapse");
+        });
+    };
+    Component.prototype.checkEl = function ($el, data) {
+        var options = $el.data("bind-options");
+        if (options) {
+            return this.parseStructure(options, this, data);
+        }
+        var prop = $el.data("bind-prop");
+        if (prop && prop.split(":")[0] == "value") {
+            this.placeHolderExr.lastIndex = 0;
+            var match = this.placeHolderExr.exec(prop.split(":")[1]);
+            return this.parseStructure(match[2], this, data);
+        }
+        ;
+    };
+    Component.prototype.dataChanged = function ($el, data) {
+        var reply = { changed: false, oldVal: null, newVal: null };
+        reply.newVal = $el.val();
+        reply.oldVal = this.checkEl($el, data).value;
+        reply.changed = (reply.newVal != reply.oldVal);
+        return reply;
+    };
+    Component.prototype.updateFromUI = function ($el, data) {
+        if (!this.dataChanged($el, data).changed)
+            return null;
+        var stuff = this.checkEl($el, data);
+        stuff.ref[stuff.variable] = $el.val();
+        return stuff;
+    };
+    Component.prototype.readBoundValueAttributes = function ($el) {
+        var reply = {};
+        if (!$el)
+            $el = this.$view;
+        var $inputs = $el.find(".jspa-data-bound");
+        $inputs.each(function () {
+            var $this = $(this);
+            var src = $this.data("value-src").split(".");
+            var obj = reply;
+            for (var s = 0; s < src.length; s++) {
+                if (s == src.length - 1)
+                    obj[src[s].split("|")[0]] = $this.val();
+                else {
+                    if (!obj[src[s]])
+                        obj[src[s]] = {};
+                    obj = obj[src[s]];
+                }
+            }
+        });
+        return reply;
+    };
+    Component.prototype.switchChevron = function (src) {
+        src.$el.find("i").toggleClass("fa-chevron-down fa-chevron-up");
+    };
+    return Component;
+}());
+var Template = (function () {
+    function Template(path, name) {
+        this.url = null;
+        this.name = null;
+        this.content = null;
+        this.loaded = false;
+        this.url = path;
+        this.name = name || "content";
+    }
+    return Template;
+}());
+var __extends = (this && this.__extends) || (function () {
+    var extendStatics = Object.setPrototypeOf ||
+        ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+        function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+    return function (d, b) {
+        extendStatics(d, b);
+        function __() { this.constructor = d; }
+        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+    };
+})();
+var JSPATests = (function (_super) {
+    __extends(JSPATests, _super);
+    function JSPATests() {
+        return _super.call(this, "QUnit.html") || this;
+    }
+    JSPATests.prototype.draw = function () {
+        var _this = this;
+        return new Promise(function (resolve) {
+            var $page = _this.getTemplate("content");
+            resolve($page);
+        });
+    };
+    JSPATests.prototype.drawn = function () {
+        console.log("IN DRAWN(): ");
+        var that = this;
+        var wtf = null;
+        function doTest() {
+            console.log("testing QUnit");
+            if (!window["QUnit"]) {
+                window.setTimeout(function () { doTest(); }, 1);
+                return;
+            }
+            that.runAllTests();
+        }
+        doTest();
+    };
+    JSPATests.prototype.runAllTests = function () {
+        QUnit.test("Test test", function (t) {
+            t.equal(1 == 1, true, "Simple equal");
+        });
+        this.routingTests();
+        QUnit.done(function () {
+            console.log("Finished all tests");
+            $("#application a").each(function (a) {
+                var href = $(this).attr("href");
+                $(this).attr("href", href.replace("?", "#qunit/?"));
+            });
+            delete window["QUnit"];
+        });
+        QUnit.start();
+    };
+    JSPATests.prototype.routingTests = function () {
+        QUnit.test("Routing", function (t) {
+            for (var r = 0; r < app.routing.routes.length; r++) {
+                var expected = {};
+                var route = app.routing.routes[r];
+                var parts = route.path.split("/");
+                var path = "";
+                var value = null;
+                for (var p = 0; p < parts.length; p++) {
+                    value = null;
+                    if (parts[p].indexOf("?") == 0) {
+                        var pair = parts[p].split(":");
+                        switch (pair[1]) {
+                            case "number":
+                                value = app.utils.randomNum(true);
+                                break;
+                            case "string":
+                                value = pair[1];
+                                break;
+                            case "query":
+                                value = "?int=" + app.utils.randomNum(true) + "&float=" + app.utils.randomNum() + "&string=" + pair[1];
+                        }
+                        expected[pair[0].replace("?", "")] = value || pair[1];
+                    }
+                    if (p > 0)
+                        path += "/";
+                    path += value || parts[p];
+                }
+                t.deepEqual(app.routing.routes[r].test(path), expected, route.path + " :: " + path);
+            }
+        });
+    };
+    return JSPATests;
+}(Component));
 var Api = (function () {
     function Api(baseHref) {
         this.localDb = new LocalDB();
@@ -674,551 +1310,6 @@ var App = (function () {
     };
     return App;
 }());
-var Pipes = (function () {
-    function Pipes() {
-    }
-    Pipes.prototype.displayDateTime = function (utc) {
-        if (!utc)
-            return "";
-        var parts = utc.split("T");
-        if (parts[0] === "0001-01-01")
-            return "";
-        if (parts.length != 2)
-            return utc;
-        var dateBits = parts[0].split("-");
-        if (dateBits.length != 3)
-            return utc;
-        return dateBits[2] + "/" + dateBits[1] + "/" + dateBits[0] + " " + parts[1].replace("Z", "").split(".")[0];
-    };
-    Pipes.prototype.addGMT = function (date) {
-        if (date.length > 0)
-            return date + " (GMT)";
-        else
-            return date;
-    };
-    Pipes.prototype.removeNull = function (value) {
-        if (value == null || value.toLowerCase() == "null")
-            return "";
-        return value;
-    };
-    return Pipes;
-}());
-var Component = (function () {
-    function Component(templates, parent) {
-        this.formater = new Pipes();
-        this.parent = null;
-        this.subscriptions = [];
-        this.htmlBooleanAttrs = [
-            'checked', 'selected', 'disabled', 'readonly', 'multiple', 'ismap', 'noresize'
-        ];
-        this.$templates = [];
-        this.waitTimeout = null;
-        this.placeHolderPattern = "{{([\w]*) (.*?) }}";
-        this.placeHolderExr = new RegExp("{{([\w]*) (.*?) }}", "g");
-        this.arrayExr = new RegExp("\\[([0-9]{1,})(.*?)\\]", "g");
-        this.id = app.utils.createUUID();
-        if (templates)
-            this.loadTemplate(templates);
-        if (parent) {
-            this.parent = app.utils.createUUID();
-            app.recievers[this.parent] = parent;
-        }
-    }
-    Component.prototype.blur = function (route) {
-        this.blurOther();
-        while (this.subscriptions.length > 0)
-            this.unsubscribe(this.subscriptions[0]);
-        this.$view.empty();
-        if (route) {
-            route.component = new route.srcComponent();
-        }
-    };
-    Component.prototype.blurOther = function () {
-    };
-    Component.prototype.postDraw = function () {
-        this.drawn();
-    };
-    Component.prototype.drawn = function () {
-    };
-    Component.prototype.subscribe = function (path, options, success, fail) {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            var ref = config.api.subscribe(path, options, success, fail);
-            _this.subscriptions.push(ref);
-            resolve(ref);
-        });
-    };
-    Component.prototype.unsubscribe = function (ref) {
-        for (var s = 0; s < this.subscriptions.length; s++) {
-            if (this.subscriptions[s] == ref) {
-                config.api.unsubscribe(this.subscriptions[s]);
-                this.subscriptions.splice(s, 1);
-            }
-        }
-    };
-    Component.prototype.recieve = function (data) {
-        console.log("Recieved data, but " + this.constructor.name + " doesn't impliment recieve():", data);
-    };
-    Component.prototype.emit = function (data, $holder) {
-        var reply = new JSPAEmit(this.constructor.name, data, $holder);
-        this.callParent("recieve", reply);
-    };
-    Component.prototype.callParent = function (func, args) {
-        if (this.parent)
-            return app.recievers[this.parent][func](args);
-        return null;
-    };
-    Component.prototype.waitingOnAsync = function () {
-        for (var t = 0; t < this.$templates.length; t++) {
-            if (this.$templates[t].loaded === false)
-                return true;
-        }
-        return false;
-    };
-    Component.prototype.setTitle = function (title) {
-        document.title = title;
-    };
-    Component.prototype.hasTemplate = function (search) {
-        for (var t = 0; t < this.$templates.length; t++) {
-            if (this.$templates[t].name == search) {
-                return true;
-            }
-        }
-        return false;
-    };
-    Component.prototype.waitOnData = function () {
-        var waitCount = 0;
-        var id = app.utils.createUUID();
-        var message = "Waiting on data";
-        this.$view = $("<app-waiting style='padding: 5px; text-align: center;' />").attr("id", id)
-            .append($("<div />").addClass("max-width-md")
-            .append($("<h1 />").text(message))
-            .append($("<div />").addClass("progress")
-            .append($("<div role='progressbar' aria-valuenow='100' aria-valuemin='0' aria-valuemax='100' />")
-            .addClass("progress-bar progress-bar-striped progress-bar-animated")
-            .css({ width: "100%" }))));
-        var updateMsg = function () {
-            if (waitCount < 10) {
-                waitCount++;
-                this.waitTimeout = window.setTimeout(function () {
-                    message = message + ".";
-                    $("#" + id).find($("h1")).text(message);
-                    updateMsg();
-                }, 1000);
-            }
-            else {
-                $("#" + id).find("div:first")
-                    .append("<br />")
-                    .append($("<button type='button' class='btn btn-info' /></button>")
-                    .append("<span>Go Back</span>")
-                    .click(function () {
-                    window.history.back();
-                }))
-                    .find($("h1")).text("No data recieved");
-                $("#" + id).find(".progress").toggleClass("progress collapse");
-            }
-        };
-        updateMsg();
-        return this.$view;
-    };
-    Component.prototype.getTemplate = function (search, data) {
-        if (this.waitTimeout != null) {
-            window.clearTimeout(this.waitTimeout);
-            this.waitTimeout = null;
-        }
-        var component = this;
-        this.$view = this.getTemplateJQuery(search);
-        if (this.$view) {
-            this.bind(this.$view, $.extend({}, component, data || {}));
-            return this.$view;
-        }
-        return $("<app-notfound />");
-    };
-    Component.prototype.getSubTemplate = function (search, data) {
-        var component = this;
-        var $view = this.getTemplateJQuery(search);
-        if ($view) {
-            this.bind($view, $.extend({}, component, data || {}));
-            return $view;
-        }
-        return $("<app-notfound />");
-    };
-    Component.prototype.getTemplateJQuery = function (search) {
-        for (var t = 0; t < this.$templates.length; t++) {
-            if (this.$templates[t].name == search) {
-                return this.$templates[t].content.clone();
-            }
-        }
-        return null;
-    };
-    Component.prototype.loadTemplate = function (input) {
-        if ($.type(input) !== "array") {
-            var temp = input;
-            input = [];
-            input.push(temp);
-        }
-        for (var t = 0; t < input.length; t++) {
-            var template = void 0;
-            if ($.type(input[t]) === "string")
-                template = new Template(input[t]);
-            else
-                template = new Template(input[t].url, input[t].name);
-            this.$templates.push(template);
-            (function (template) {
-                fetch(template.url).then(function (response) {
-                    var body = response.text();
-                    return body;
-                }).then(function (body) {
-                    template.content = $("<app-" + template.name + " />").append($(body));
-                    template.loaded = true;
-                });
-            })(template);
-        }
-    };
-    Component.prototype.parseStructure = function (strut, component, data) {
-        var reply = { ref: data, variable: null, value: null };
-        try {
-            var pipes = strut.split("|");
-            var parts = pipes[0].split(".");
-            var stuff = JSON.clone(data);
-            var arr = null;
-            for (var p = 0; p < parts.length; p++) {
-                component.arrayExr.lastIndex = 0;
-                reply.variable = parts[p];
-                if ((arr = component.arrayExr.exec(parts[p])) != null) {
-                    stuff = stuff[parts[p].replace(arr[0], "")][arr[1]];
-                    if (p < (parts.length - 1))
-                        reply.ref = reply.ref[parts[p].replace(arr[0], "")][arr[1]];
-                }
-                else {
-                    if (stuff == null || typeof (stuff[parts[p]]) == "undefined") {
-                        console.log(parts[p] + " not found in object: ", stuff);
-                        return reply;
-                    }
-                    stuff = stuff[parts[p]];
-                    if (p < (parts.length - 1))
-                        reply.ref = reply.ref[parts[p]];
-                }
-            }
-            reply.value = stuff;
-            for (var pipe = 1; pipe < pipes.length; pipe++) {
-                if (typeof (component.formater[pipes[pipe]]) != "undefined")
-                    reply.value = component.formater[pipes[pipe]](reply.value);
-                else {
-                    console.log("ERROR - Pipe not found: " + pipes[pipe] + "; Piping stopped for this chain");
-                    break;
-                }
-            }
-        }
-        catch (ex) {
-            console.log("execption: ", ex);
-            console.log("reply: ", reply);
-        }
-        return reply;
-    };
-    Component.prototype.textMultiMatch = function (content, component, data) {
-        var match = null;
-        var matches = [];
-        var regEx = new RegExp(component.placeHolderPattern, "g");
-        while ((match = regEx.exec(content)) != null) {
-            var thisMatch = {
-                pattern: "{{ " + match[2] + " }}",
-                value: this.parseStructure(match[2], component, data).value
-            };
-            matches.push(thisMatch);
-        }
-        for (var m = 0; m < matches.length; m++) {
-            content = content.replace(matches[m].pattern, matches[m].value);
-        }
-        return content;
-    };
-    Component.prototype.functionVal = function (callSignature, component, data) {
-        var func = callSignature.split("(");
-        var val = null;
-        if (func[1]) {
-            val = this.textMultiMatch(func[1].substr(0, func[1].length - 1), component, data);
-        }
-        return val;
-    };
-    Component.prototype.bind = function ($template, data) {
-        var bindref = new Utils().createUUID();
-        var component = this;
-        function walk($el) {
-            var processChildren = processEl($el);
-            if (processChildren) {
-                $el = $el.children().first();
-                while ($el.length) {
-                    walk($el);
-                    $el = $el.next();
-                }
-            }
-        }
-        function processEl($el) {
-            var $this = $el;
-            try {
-                var noBind = $this.data("no-bind");
-                if (noBind) {
-                    if (config.verboseMessages)
-                        console.log("VERBOSE:: Component.bind().processEl() - Not binding: ", $el);
-                    return false;
-                }
-                var cont = $this.data("bind-if");
-                if (cont) {
-                    $this.data("bind-if", null);
-                    var comparison = component.processBindComparison(cont, component, data);
-                    if (!comparison || (comparison == null && !component.parseStructure(cont, component, data).value ? true : false)) {
-                        $this.addClass("dom-remove");
-                        return false;
-                    }
-                }
-                var control = $this.data("bind-control");
-                if (control) {
-                    switch (control) {
-                        case "tabs":
-                            component.tabControl($this);
-                            break;
-                    }
-                }
-                var multiple = $this.data("bind-for");
-                if (multiple) {
-                    $this.data("bind-for", null);
-                    var options_1 = multiple.split("|");
-                    multiple = options_1[0];
-                    (function ($this, multiple, component, data) {
-                        var $template = $this.children().clone();
-                        var info = component.parseStructure(multiple, component, data);
-                        $this.empty();
-                        if (!info.value)
-                            return;
-                        (function ($this, $template, info) {
-                            for (var i = 0; i < info.length; i++) {
-                                var $new = $template.clone();
-                                component.bind($new, info[i]);
-                                if (options_1[1] == "includeParent")
-                                    info[i].JSPA = { array: multiple, index: i, parent: data };
-                                $this.append($new);
-                            }
-                        })($this, $template, info.value);
-                    })($this, multiple, component, data);
-                }
-                var textNodes = $this.textNodes();
-                var match = null;
-                var arr = null;
-                for (var n = 0; n < textNodes.length; n++) {
-                    var content = textNodes[n].nodeValue;
-                    textNodes[n].nodeValue = component.textMultiMatch(content, component, data);
-                }
-                var valueAttribute = $this.val();
-                if (valueAttribute) {
-                    var valueExpr = new RegExp(component.placeHolderPattern, "g");
-                    var match_1 = valueExpr.exec(valueAttribute);
-                    if (match_1) {
-                        $this.addClass("jspa-data-bound");
-                        $this.data("value-src", match_1[2]);
-                        $this.val(component.parseStructure(match_1[2], component, data).value);
-                    }
-                }
-                var options = $this.data("bind-options");
-                if (options) {
-                    var val = component.parseStructure(options, component, data).value;
-                    $this.val(val);
-                }
-                var prop = $this.data("bind-prop");
-                if (prop) {
-                    $this.data("bind-prop", null);
-                    component.processBindProp($this, prop, component, data);
-                }
-                var prop1 = $this.data("bind-prop1");
-                if (prop1) {
-                    $this.data("bind-prop1", null);
-                    component.processBindProp($this, prop1, component, data);
-                }
-                var prop2 = $this.data("bind-prop2");
-                if (prop1) {
-                    $this.data("bind-prop2", null);
-                    component.processBindProp($this, prop2, component, data);
-                }
-                var prop3 = $this.data("bind-prop3");
-                if (prop3) {
-                    $this.data("bind-prop3", null);
-                    component.processBindProp($this, prop3, component, data);
-                }
-                var style = $this.data("bind-style");
-                if (style) {
-                    console.warn("JSPA:: bind-style called use bind-load instead function: ", style);
-                    $this.data("bind-style", null);
-                    if (!$this.data("bind-load"))
-                        $this.data("bind-load", style);
-                }
-                var load = $this.data("bind-load");
-                if (load) {
-                    $this.data("bind-load", null);
-                    var func = load.split("(");
-                    var val = component.functionVal(load, component, data);
-                    if (component[func[0]])
-                        component[func[0]](new JSPAEvent({ $el: $this, component: component, data: data, value: val, evt: new $.Event("load") }));
-                    else
-                        console.warn("data-bind-load on " + component.constructor.name + " assigned to non-existant method: ", { method: func[0], component: component });
-                }
-                var click = $this.data("bind-click");
-                if (click) {
-                    component.bindJSPAEvent(component, $this, "click", click, data);
-                }
-                var mouse = $this.data("bind-mouse");
-                if (mouse) {
-                    component.bindJSPAEvent(component, $this, "mousemove", mouse, data);
-                }
-                var change = $this.data("bind-change");
-                if (change) {
-                    component.bindJSPAEvent(component, $this, "change", change, data);
-                }
-                var keydown = $this.data("bind-keydown");
-                if (keydown) {
-                    component.bindJSPAEvent(component, $this, "keydown", keydown, data);
-                }
-                var keyup = $this.data("bind-keyup");
-                if (keyup) {
-                    component.bindJSPAEvent(component, $this, "keyup", keyup, data);
-                }
-                var blur_1 = $this.data("bind-blur");
-                if (blur_1) {
-                    component.bindJSPAEvent(component, $this, "blur", blur_1, data);
-                }
-            }
-            catch (ex) {
-                console.log("Component.bind().processEl() ERROR: ", { error: ex, component: component, data: data });
-            }
-            return true;
-        }
-        walk($template);
-        $template.find(".dom-remove").remove();
-    };
-    Component.prototype.bindJSPAEvent = function (component, $this, type, bindEvent, data) {
-        $this.data("bind-" + type, null);
-        $this.attr("data-bind-" + type, null);
-        var func = bindEvent.split("(");
-        var val = component.functionVal(bindEvent, component, data);
-        $this.on(type, function (evt) {
-            if (component[func[0]])
-                component[func[0]](new JSPAEvent({ $el: $this, component: component, data: data, value: val || evt.which, evt: evt }));
-            else
-                console.warn("data-bind-" + type + " on " + component.constructor.name + " assigned to non-existant method", { method: func[0], component: component });
-        });
-    };
-    Component.prototype.processBindProp = function ($this, prop, component, data) {
-        var conf = prop.split(":");
-        var property = conf[0];
-        conf.splice(0, 1);
-        conf = conf.join(":");
-        var booleanAttr = false;
-        for (var b = 0; b < component.htmlBooleanAttrs.length; b++) {
-            if (component.htmlBooleanAttrs[b] == property) {
-                booleanAttr = true;
-                break;
-            }
-        }
-        if (booleanAttr) {
-            if (conf.indexOf("is(") == 0 || conf.indexOf("not(") == 0) {
-                var comparison = component.processBindComparison(conf, component, data);
-                $this.prop(property, comparison);
-            }
-            else {
-                var val = component.textMultiMatch(conf, component, data).toLowerCase();
-                $this.prop(property, val == "true");
-            }
-        }
-        else
-            $this.attr(property, component.textMultiMatch(conf, component, data));
-    };
-    Component.prototype.processBindComparison = function (conf, component, data) {
-        if (conf.indexOf("is(") == 0 || conf.indexOf("not(") == 0) {
-            var variables = /\((.*?)\)/.exec(conf)[1].split(",");
-            var val1 = component.textMultiMatch(variables[0], component, data);
-            var val2 = component.textMultiMatch(variables[1], component, data);
-            if (conf.indexOf("is(") == 0) {
-                return (val1 == val2);
-            }
-            else {
-                return (val1 != val2);
-            }
-        }
-        else
-            return null;
-    };
-    Component.prototype.tabControl = function ($el) {
-        $el.find(".nav-item").click(function (evt) {
-            var $navLink = $(this).find(".nav-link");
-            $(this).siblings().find(".nav-link").removeClass("active");
-            $navLink.addClass("active");
-            var $target = $el.next(".tab-content").find("#" + $navLink.data("target"));
-            $target.siblings().addClass("collapse");
-            $target.removeClass("collapse");
-        });
-    };
-    Component.prototype.checkEl = function ($el, data) {
-        var options = $el.data("bind-options");
-        if (options) {
-            return this.parseStructure(options, this, data);
-        }
-        var prop = $el.data("bind-prop");
-        if (prop && prop.split(":")[0] == "value") {
-            this.placeHolderExr.lastIndex = 0;
-            var match = this.placeHolderExr.exec(prop.split(":")[1]);
-            return this.parseStructure(match[2], this, data);
-        }
-        ;
-    };
-    Component.prototype.dataChanged = function ($el, data) {
-        var reply = { changed: false, oldVal: null, newVal: null };
-        reply.newVal = $el.val();
-        reply.oldVal = this.checkEl($el, data).value;
-        reply.changed = (reply.newVal != reply.oldVal);
-        return reply;
-    };
-    Component.prototype.updateFromUI = function ($el, data) {
-        if (!this.dataChanged($el, data).changed)
-            return null;
-        var stuff = this.checkEl($el, data);
-        stuff.ref[stuff.variable] = $el.val();
-        return stuff;
-    };
-    Component.prototype.readBoundValueAttributes = function ($el) {
-        var reply = {};
-        if (!$el)
-            $el = this.$view;
-        var $inputs = $el.find(".jspa-data-bound");
-        $inputs.each(function () {
-            var $this = $(this);
-            var src = $this.data("value-src").split(".");
-            var obj = reply;
-            for (var s = 0; s < src.length; s++) {
-                if (s == src.length - 1)
-                    obj[src[s].split("|")[0]] = $this.val();
-                else {
-                    if (!obj[src[s]])
-                        obj[src[s]] = {};
-                    obj = obj[src[s]];
-                }
-            }
-        });
-        return reply;
-    };
-    Component.prototype.switchChevron = function (src) {
-        src.$el.find("i").toggleClass("fa-chevron-down fa-chevron-up");
-    };
-    return Component;
-}());
-var Template = (function () {
-    function Template(path, name) {
-        this.url = null;
-        this.name = null;
-        this.content = null;
-        this.loaded = false;
-        this.url = path;
-        this.name = name || "content";
-    }
-    return Template;
-}());
 var LocalDB = (function () {
     function LocalDB() {
     }
@@ -1412,91 +1503,6 @@ var JSPAEmit = (function () {
     }
     return JSPAEmit;
 }());
-var __extends = (this && this.__extends) || (function () {
-    var extendStatics = Object.setPrototypeOf ||
-        ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
-        function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
-    return function (d, b) {
-        extendStatics(d, b);
-        function __() { this.constructor = d; }
-        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
-    };
-})();
-var JSPATests = (function (_super) {
-    __extends(JSPATests, _super);
-    function JSPATests() {
-        return _super.call(this, "QUnit.html") || this;
-    }
-    JSPATests.prototype.draw = function () {
-        var _this = this;
-        return new Promise(function (resolve) {
-            var $page = _this.getTemplate("content");
-            resolve($page);
-        });
-    };
-    JSPATests.prototype.drawn = function () {
-        console.log("IN DRAWN(): ");
-        var that = this;
-        var wtf = null;
-        function doTest() {
-            console.log("testing QUnit");
-            if (!window["QUnit"]) {
-                window.setTimeout(function () { doTest(); }, 1);
-                return;
-            }
-            that.runAllTests();
-        }
-        doTest();
-    };
-    JSPATests.prototype.runAllTests = function () {
-        QUnit.test("Test test", function (t) {
-            t.equal(1 == 1, true, "Simple equal");
-        });
-        this.routingTests();
-        QUnit.done(function () {
-            console.log("Finished all tests");
-            $("#application a").each(function (a) {
-                var href = $(this).attr("href");
-                $(this).attr("href", href.replace("?", "#qunit/?"));
-            });
-            delete window["QUnit"];
-        });
-        QUnit.start();
-    };
-    JSPATests.prototype.routingTests = function () {
-        QUnit.test("Routing", function (t) {
-            for (var r = 0; r < app.routing.routes.length; r++) {
-                var expected = {};
-                var route = app.routing.routes[r];
-                var parts = route.path.split("/");
-                var path = "";
-                var value = null;
-                for (var p = 0; p < parts.length; p++) {
-                    value = null;
-                    if (parts[p].indexOf("?") == 0) {
-                        var pair = parts[p].split(":");
-                        switch (pair[1]) {
-                            case "number":
-                                value = app.utils.randomNum(true);
-                                break;
-                            case "string":
-                                value = pair[1];
-                                break;
-                            case "query":
-                                value = "?int=" + app.utils.randomNum(true) + "&float=" + app.utils.randomNum() + "&string=" + pair[1];
-                        }
-                        expected[pair[0].replace("?", "")] = value || pair[1];
-                    }
-                    if (p > 0)
-                        path += "/";
-                    path += value || parts[p];
-                }
-                t.deepEqual(app.routing.routes[r].test(path), expected, route.path + " :: " + path);
-            }
-        });
-    };
-    return JSPATests;
-}(Component));
 var Route = (function () {
     function Route(pth, cmpnnt, instance) {
         this.numberExpr = "[0-9]{1,}";
@@ -1777,6 +1783,29 @@ var Component1 = (function (_super) {
         return this.waitOnData();
     };
     return Component1;
+}(Component));
+var Component2 = (function (_super) {
+    __extends(Component2, _super);
+    function Component2() {
+        var _this = _super.call(this, [
+            { url: "Components/component-2/component-2.html", name: "master" },
+        ]) || this;
+        _this.dataStore = [];
+        return _this;
+    }
+    Component2.prototype.draw = function (args) {
+        var _this = this;
+        this.dataStore = [];
+        for (var t = 0; t < 5; t++) {
+            this.dataStore.push({ name: "Tab " + (t + 1), data: "Content " + (t + 1) });
+        }
+        return new Promise(function (resolve) {
+            var $page = _this.getTemplate("master");
+            $page.find(".nav-tabs").find(".nav-link").first().trigger("click");
+            resolve($page);
+        });
+    };
+    return Component2;
 }(Component));
 var ClientError = (function (_super) {
     __extends(ClientError, _super);

@@ -67,6 +67,7 @@
   <ItemGroup>
     <Content Include="compilerconfig.json" />
     <Content Include="Components\component-1\component-1.html" />
+    <Content Include="Components\component-2\component-2.html" />
     <Content Include="dist\css\highlight\vs.css" />
     <Content Include="dist\js\application.js.map" />
     <Content Include="dist\libraries\cycle.js" />
@@ -238,6 +239,7 @@
     <TypeScriptCompile Include="Components\app-footer\app-footer.ts" />
     <TypeScriptCompile Include="Components\app-header\app-header.ts" />
     <TypeScriptCompile Include="Components\component-1\component-1.ts" />
+    <TypeScriptCompile Include="Components\component-2\component-2.ts" />
     <TypeScriptCompile Include="Components\error\error.ts" />
     <TypeScriptCompile Include="Components\home\home.ts" />
     <TypeScriptCompile Include="config.ts" />

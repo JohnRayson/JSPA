@@ -596,7 +596,7 @@ abstract class Component {
 
     private tabControl($el): void {
         // find all the .nav-item's that are children of this, and add a click event
-        $el.find(".nav-item").click(function (evt) {
+        $el.on("click", ".nav-item", function (evt) {
             let $navLink = $(this).find(".nav-link");
             // clear the ".active" off all the siblings
             $(this).siblings().find(".nav-link").removeClass("active");

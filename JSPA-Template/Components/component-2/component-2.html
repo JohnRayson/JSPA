@@ -1,0 +1,13 @@
+﻿<div class="max-width-xl">
+    <ul class="nav nav-tabs" role="tablist" data-bind-control="tabs" data-bind-for="dataStore">
+        <li class="nav-item">
+            <span class="nav-link" data-toggle="collapse" data-bind-prop="data-target:content-{{ name|toValidDomId }}">{{ name }}</span>
+        </li>
+    </ul>
+
+    <div class="tab-content" data-bind-for="dataStore">
+        <div class="collapse" data-bind-prop="id:content-{{ name|toValidDomId }}">
+            <h4>{{ data }}</h4>
+        </div>
+    </div>
+</div>

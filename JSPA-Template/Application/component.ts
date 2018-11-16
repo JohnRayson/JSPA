@@ -578,7 +578,8 @@ abstract class Component {
             let variables = /\((.*?)\)/.exec(conf)[1].split(",");
             // get the value of the variable
             let val1 = component.textMultiMatch(variables[0], component, data);
-            let val2 = component.textMultiMatch(variables[1], component, data);
+            // default to boolean, but if a value is supplied -then use it
+            let val2 = variables[1] ? component.textMultiMatch(variables[1], component, data) : "true";
 
             //console.log("processBindComparison(): ", { conf: conf, compare: (conf.indexOf("is(") == 0 ? "is()" : "not()"), val1: val1, val2: val2, equal: (val1 == val2) });
 

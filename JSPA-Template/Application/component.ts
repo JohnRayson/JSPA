@@ -509,6 +509,22 @@ abstract class Component {
                 if (blur) {
                     component.bindJSPAEvent(component, $this, "blur", blur, data);
                 }
+				
+				// class - adds class, "let class" doesn't work
+                let cssclass = $this.data("bind-class");
+                if (cssclass) {
+                    // format is in line if statement. eg data-bind-class="is({{ something }}, true)?"a-class":"an-optional-alternative"
+                    let parts = cssclass.split("?");
+                    let classes = parts[1].split(":");
+                    let comparison = component.processBindComparison(parts[0], component, data);
+
+                    //console.log("cssClass: ", { cssclass: cssclass, comp: comparison, classes: classes });
+
+                    if (comparison)
+                        $this.addClass(classes[0]);
+                    else
+                        $this.addClass(classes[1]);
+                }
             }
             catch (ex) {
                 console.log("Component.bind().processEl() ERROR: ", { error: ex, component: component, data: data });

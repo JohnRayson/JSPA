@@ -525,6 +525,31 @@ abstract class Component {
                     else
                         $this.addClass(classes[1]);
                 }
+				
+				// input validation rule
+                let validate = $this.data("bind-validate");
+                if (validate) {
+                    // convert the string to a RegEx
+                    let expr = new RegExp(validate);
+
+                    let check = function ($el: JQuery) {
+                        let newVal: string = $this.val();
+                        console.log("Component.bind-validate running: ", { exp: expr, val: newVal });
+
+                        if (newVal.match(expr))
+                            $this.addClass("is-valid").removeClass("is-invalid");
+                        else
+                            $this.addClass("is-invalid").removeClass("is-valid");
+                    }
+
+                    $this.change(() => {
+                        check($this);
+                    });
+                    $this.keyup(() => {
+                        check($this);
+                    })
+
+                }
             }
             catch (ex) {
                 console.log("Component.bind().processEl() ERROR: ", { error: ex, component: component, data: data });
